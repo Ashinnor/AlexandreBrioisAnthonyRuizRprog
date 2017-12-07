@@ -1,0 +1,373 @@
+---
+title: "Challenge B"
+author: "Alexandre Briois, Anthony Ruiz"
+date: "8 december 2017"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Challenge B
+### TAsk 1B - Predicting house prices in Ames, Iowa (continued)
+
+Step 1 -
+
+We have chosen the random forest method. Our intuition regarding of how it works is the following : 
+
+This method consisted in creating a certain number of regression trees (because we are in the case where the output is continuous, otherwise we talk about classification trees). We'll make 500 trees in our database.
+
+The software takes 500 subsets of our observation data, and it creates one tree per subset. (In general, each subset represents around 2/3 of the total observations, or 90% depending on the software...).
+
+To create a tree :
+
+-It takes randomly explanatory variables of our database. The root of a tree will be observations of a variable. For the example, take a variable of our database : the size of the house in square feet.
+
+-Then, its splits our tree in several branches with another value of another character (for example the number of bedrooms). It repeats this step an appropriate number of time (We can define it to find a compromise between precision of the results and the time of calculation of the software).
+
+It's important to be precise so that any output (or any predictions) of the trees is hence a value of our database. That was not the case when we made a regression like OLS regression. 
+
+Now, if we want to estimate the housing price of another database, the software will follow ways created in previous trees. In other word, (if we take the same example as before), each tree "votes" for an output value, and we obtain a mean of these votes. And in this way, we'll obtain a value of the housing price of our house. 
+That's what we have understood of this method of Machine Learning.
+
+Step 2 - 
+
+Precisions regarding the error metrics (to compare our two models):
+The error metric we'll use to evaluate our models is the RMSE (root mean squared error). This error measure gives more weight to larger residuals than smaller ones). What this means is that we consider that missing the prediction for housing price by 2000 dollar, on a given house, is not only twice as bad as missing by 1000 dollar, but worse than that.
+We'll use the MAE (mean absolute error) as another error metric. It gives equal weight to the residuals, which means 2000 dollar is actually twice as bad as 1000 dollar.
+```{r,echo=FALSE,include=FALSE}
+#We are going to implement the Random forest regression :
+
+library(tidyverse)
+library(randomForest)
+
+train <- read.table(file=file.choose(),header=T,dec=".", sep=",")
+attach(train)
+
+test <- read.table(file=file.choose(),header=T,dec=".", sep=",")
+attach(test)
+
+#As we did in the first challenge, at first we are cleaning the database:
+
+#We delete variables with a number of NA values is greater than 100
+
+train$MiscFeature <- NULL
+train$Fence<- NULL
+train$PoolQC<- NULL
+train$GarageCond<- NULL
+train$GarageQual<- NULL
+train$GarageFinish<- NULL
+train$GarageYrBlt<- NULL
+train$GarageType<- NULL
+train$FireplaceQu<- NULL
+train$LotFrontage<- NULL
+train$Alley <- NULL
+
+
+#We delete rows were there remains a Na value
+train2 <- na.omit(train)
+
+head(train2)
+
+#Now we have to Convert character variables to factors 
+cat_var <- train2 %>% summarise_all(.funs = funs(is.character(.))) %>% gather(key = "feature", value = "is.chr") %>% filter(is.chr == TRUE) %>% select(feature) %>% unlist
+train2 %>% mutate_at(.cols = cat_var, .funs = as.factor)
+
+set.seed(123)
+
+
+###Now we can run the Random Forest estimation using our final model found in the Challenge A :
+
+model2 <- randomForest(SalePrice ~ train2$OverallQual + train2$OverallCond + train2$LotArea + train2$YearBuilt
+                       + train2$BsmtFinSF1 + train2$X1stFlrSF + train2$X2ndFlrSF + train2$GarageArea
+                       + train2$KitchenAbvGr + train2$BedroomAbvGr, data = train2,importance = TRUE, ntree = 500, na.action=na.roughfix)
+
+## How many trees are needed to reach the minimum error estimate?
+which.min(model2$mse)
+
+#But here we can keep 500 trees, because the time of computation is quite low
+
+#The following code is to know the importance of each variable.
+#For example, if the associated value to OverallQual is 39.745846, it means
+#that if we delete this variable in the model, the measurement of error would 
+#increase of 39%
+
+imp2 <- as.data.frame(sort(importance(model2)[,1],decreasing = TRUE),optional = T)
+names(imp2) <- "% Inc MSE"
+imp2
+
+print(model2)
+```
+Step 3 - 
+
+We perform the predictions on the test data. Details and comments of the code are in the code as requested.
+We finally obtain this table and the two graphs to make the comparison :
+
+
+```{r,echo=FALSE,include=FALSE}
+SalePricePredictions <- predict(model2, test)
+head(SalePricePredictions)
+
+
+# To compare the two models, we are going to evaluate the RMSE
+#(root mean quare error) and the MAE (mean absolute error)
+#on the testing data:
+
+
+#At first, we have to compute the mean of the true values of Saleprice
+mean_SalePrice <- mean(train2$SalePrice) 
+mean_SalePrice
+
+#Then, we omit the Na value of our vector of predictions (if there are some)
+SalePricePredictions_Forest <- na.omit(SalePricePredictions)
+
+#Now are are sure we can compute the RMSE and the MAE :
+
+RMSE.forest <- sqrt(mean((mean_SalePrice-SalePricePredictions_Forest )^2))
+RMSE.forest
+
+MAE.forest <- mean(abs(mean_SalePrice-SalePricePredictions_Forest))
+MAE.forest
+
+
+###############OLS PREDICTION##################
+
+#We repeat the same steps we did for the Random Forest 
+#(Do the regression, compute the RMSE and the MAE)
+
+regression <- lm(SalePrice ~ train2$OverallQual + train2$OverallCond + train2$LotArea + train2$YearBuilt
+                 + train2$BsmtFinSF1 + train2$X1stFlrSF + train2$X2ndFlrSF + train2$GarageArea
+                 + train2$KitchenAbvGr + train2$BedroomAbvGr, data = train2)
+
+summary(regression)
+
+SalePricePredictions2 <- predict(regression, test)
+head(SalePricePredictions2)
+
+#We compte the RMSE and the MAE as previously
+
+SalePricePredictions_OLS <- na.omit(SalePricePredictions2)
+
+RMSE.OLS <- sqrt(mean((mean_SalePrice-SalePricePredictions_OLS)^2))
+RMSE.OLS
+
+MAE.OLS <- mean(abs(mean_SalePrice-SalePricePredictions_OLS))
+MAE.OLS
+
+#### Now we are going to compare the two methods with the previous computation:
+
+#Firstly, we create a data frame with the error measures for each method :
+
+accuracy <- data.frame(Method = c("OLS","Random forest"),
+                       RMSE   = c(RMSE.OLS,RMSE.forest),
+                       MAE    = c(MAE.OLS,MAE.forest)) 
+
+#Then, we round the values and print the table
+accuracy$RMSE <- round(accuracy$RMSE,2)
+accuracy$MAE <- round(accuracy$MAE,2) 
+accuracy
+
+#The two estimations are very close in term of errors !
+#Maybe we can say :
+#-If we look the RMSE, the OLS seems more precise
+#-If we look the MAE, the Random Forest seems more precise
+
+```
+
+
+```{r,echo=FALSE,include=FALSE}
+
+###Now we want the two estimations in the same table of the true value of the housing price
+
+Final_table <- data.frame(Id= c(1:1412), True_value = train2$SalePrice, OLS= SalePricePredictions_OLS,
+                          RandomForest = SalePricePredictions_Forest)
+
+```
+
+```{r}
+head(Final_table)
+```
+```{r,echo=FALSE,include=FALSE}
+attach(Final_table)
+```
+We see that both are very close to the reality. It's difficult to say which method is the best among them
+
+Maybe, with a graph it will be easier to compare :
+(We put the true value on the x-axe and the estimation on the y-axe, and put the line y = x to show if the estimation is close or not of the true value)
+
+Plot of the OLS and the True Value of SalePrice :
+```{r}
+ggplot(data = Final_table,aes(x = True_value, y = OLS)) + 
+  geom_point(colour = "blue") + 
+  geom_abline(intercept = 0, slope = 1, colour = "red") +
+  ggtitle("OLS Predicted value vs True value of SalePrice")
+```
+
+Plot of the Random Forest and the true value of SalePrice :
+```{r}
+ggplot(data = Final_table,aes(x = True_value, y = RandomForest)) + 
+  geom_point(colour = "blue") + 
+  geom_abline(intercept = 0, slope = 1, colour = "red") +
+  ggtitle("Random Forest predicted value vs True value of SalePrice")
+```
+Thanks to theses two graphs, we can say the Random Forest seems more precise than OLS, essentially with large value of SalePrice (from 300 000 dollar). Indeed, there's less dispersion around the estimation line.
+
+### Task 2B - Overfitting in Machine Learning (continued)
+
+Step 1 -
+
+We take back our previous code to simulate the data and the training and test samples. We will use the function npreg to obtain the local linear models.
+
+```{r, echo=FALSE,include=FALSE}
+library(tidyverse)
+library(np)
+library(caret)
+
+set.seed(1)
+Nsim <- 150
+b <- c(0,1)
+x0 <- rep(1, Nsim)
+x1 <- rnorm(n = Nsim)
+
+X <- cbind(x0, x1^3)
+y.true <- X %*% b
+y.true
+plot(y.true)
+eps <- rnorm(n = Nsim)
+y <- X %*% b + eps
+
+df <- tbl_df(y[,1]) %>% rename(y = value) %>% bind_cols(tbl_df(x1)) %>% rename(x = value) %>% bind_cols(tbl_df(y.true[,1])) %>% rename(y.true = value)
+
+# Split sample into training and testing, 80/20
+training.index <- createDataPartition(y = y, times = 1, p = 0.8)
+df <- df %>% mutate(which.data = ifelse(1:n() %in% training.index$Resample1, "training", "test"))
+
+training <- df %>% filter(which.data == "training")
+test <- df %>% filter(which.data == "test")
+
+# Train linear model y ~ x on training
+lm.fit <- lm(y ~ x, data = training)
+summary(lm.fit)
+#Making predictions
+df <- df %>% mutate(y.lm = predict(object = lm.fit, newdata = df))
+training <- training %>% mutate(y.lm = predict(object = lm.fit))
+```
+
+```{r}
+# Train local linear model y ~ x on training, using default low flexibility (high bandwidth)
+ll.fit.lowflex <- npreg(y ~ x, data = training, method = "ll", bws = 0.5)
+```
+Step 2 -
+```{r}
+# Train local linear model y ~ x on training, using default low flexibility (high bandwidth)
+ll.fit.highflex <- npreg(y ~ x, data = training, method = "ll", bws = 0.01)
+```
+
+```{r,echo=FALSE,include=FALSE}
+#Making the predictions of both models the same way we did before
+df <- df %>% mutate(y.ll.lowflex = predict(object = ll.fit.lowflex, newdata = df), y.ll.highflex = predict(object = ll.fit.highflex, newdata = df))
+training <- training %>% mutate(y.ll.lowflex = predict(object = ll.fit.lowflex, newdata = training), y.ll.highflex = predict(object = ll.fit.highflex, newdata = training))
+test <- test %>% mutate(y.ll.lowflex = predict(object = ll.fit.lowflex, newdata = test), y.ll.highflex = predict(object = ll.fit.highflex, newdata = test))
+```
+Step 3 - Scatterplot
+```{r}
+ggplot(training) + geom_point(mapping = aes(x = x, y = y)) + 
+  geom_line(mapping = aes(x = x, y = y.true)) + 
+  geom_line(mapping = aes(x = x, y = y.ll.lowflex), color = "red") + 
+  geom_line(mapping = aes(x = x, y = y.ll.highflex), color = "blue")
+```
+
+Step 4 -
+We can see that between the two models, the more variable predictions are the ones from the high-flexibility model (the blue line displays a lot of fluctuations). However, it's bias is lowered by those fluctuations : the blue line covers much more space/points than the red one. So the high-flexibility model is the more variable and shows the lower bias.
+
+Step 5 -
+```{r}
+#We repeat the same plot on the test data
+ggplot(test) + geom_point(mapping = aes(x = x, y = y)) + 
+  geom_line(mapping = aes(x = x, y = y.true)) + 
+  geom_line(mapping = aes(x = x, y = y.ll.lowflex), color = "red") + 
+  geom_line(mapping = aes(x = x, y = y.ll.highflex), color = "blue")
+```
+On this new graph we can see that the roles haven't really switched, the high-flexibility model has more variable predictions. However, we can suppose that it's bias has increased since there's more dispersion between the points and the blue line. It's harder to tell which model is the best now.
+
+Step 6 -
+We create the vector of bandwidth going from 0.01 to 0.5 with a step of 0.001.
+```{r,echo=FALSE,include=TRUE}
+bw <- seq(0.01, 0.5, by = 0.001)
+```
+
+We use the function lapply and the function npreg to train the model on each bandwidth. Step 7, 8 and 9 are detailed in the code.
+```{r,echo=FALSE,include=FALSE}
+# Train local linear model y ~ x on training with each bandwidth
+llbw.fit <- lapply(X = bw, FUN = function(bw) {npreg(y ~ x, data = training, method = "ll", bws = bw)})
+
+# Compute for each bandwidth the MSE-training
+mse.training <- function(fit.model){
+  predictions <- predict(object = fit.model, newdata = training)
+  training %>% mutate(squared.error = (y - predictions)^2) %>% summarize(mse = mean(squared.error))
+}
+mse.train.results <- unlist(lapply(X = llbw.fit, FUN = mse.training))
+
+# Compute for each bandwidth the MSE-test
+mse.test <- function(fit.model){
+  predictions <- predict(object = fit.model, newdata = test)
+  test %>% mutate(squared.error = (y - predictions)^2) %>% summarize(mse = mean(squared.error))
+}
+mse.test.results <- unlist(lapply(X = llbw.fit, FUN = mse.test))
+```
+
+Step 10 -
+Here is the final plot on the evolution of the MSE of both datas with respect to the change in bandwidth :
+```{r}
+mse.df <- tbl_df(data.frame(bandwidth = bw, mse.train = mse.train.results, mse.test = mse.test.results))
+ggplot(mse.df) + 
+  geom_line(mapping = aes(x = bandwidth, y = mse.train), color = "blue") +
+  geom_line(mapping = aes(x = bandwidth, y = mse.test), color = "orange")
+```
+We can see on this final plot that for a very low bandwidth, the best estimation is made on the test data. However, as the bandwidth increases, it is the training data that takes over.
+
+### Task 3B - Privacy regulation compliance in France
+
+```{r,echo=FALSE,include=FALSE}
+#LIBRARIES
+
+library(readr)
+library(tidyr)
+library(dplyr)
+```
+Step 1 - CNIL dataset import. See code.
+```{r,echo=FALSE,include=FALSE}
+CNIL <- read_delim(file=file.choose(),";", escape_double = FALSE, trim_ws = TRUE)
+```
+Step 2 -
+We proceed in several steps, as detailed in the code. We obtain the following table, which shows us that the only company left isn't in every single department. 
+```{r,echo=FALSE,include=FALSE}
+attach(CNIL)
+CNIL2 <- data.frame(cbind(CNIL$Siren,CNIL$Code_Postal))
+attach(CNIL2)
+#Modify variables to get numeric ones
+CNIL2[, 1] <- as.numeric(as.character( CNIL2[, 1] ))
+CNIL2[, 2] <- as.numeric(as.character( CNIL2[, 2] ))
+#Modify column names to have appropriate ones
+colnames(CNIL2) <- c("SIREN","Code_Postal")
+#Keep only the two first digits of the postal code
+CNIL2$Code_Postal <- substr(CNIL2$Code_Postal, 0, 2)
+#Get the companies who a CNIL in every department (there are 101)
+Step2 <-  CNIL2 %>% group_by(SIREN) %>% filter(n()>101) #
+Step2
+```
+
+```{r}
+table(Step2)
+```
+Therefore, there are no organizations that have nominated a CNIL per department.
+Step 3 -
+Here comes the funny part. The import takes 5 to 10 minutes here. To gain time, we are only taking the SIREN and the size of the firm from the database. The whole database would take days to get imported. We invite you to run the code manually here, because knitting the whole document with this line in it takes too long.
+```{r, echo=FALSE,include=FALSE,eval=FALSE}
+"sirendf"<-read.csv(file=file.choose(),
+                   sep=";",dec=".",header = T, colClasses = c(NA,rep("NULL",78)))
+
+Step3 <- sirendf[(sirendf$SIREN %in% CNIL2$SIREN),]
+#We have a table with SIREN and company size
+```
